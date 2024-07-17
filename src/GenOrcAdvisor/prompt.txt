@@ -1,0 +1,19 @@
+Below is my "Instrument State" Data
+
+{0}
+
+Below is my "Order Message" incoming
+
+{1}
+
+Order message parameters & what does it's key parameter means for
+1) OrderType refers process of diagnosis 
+2) Slides.StainProtocol.Name refers the protocol that slide has to process for diagnosis. 
+	a) Exceptionally 'IHC Q' &  'IHC F' uses same reagent & can be treated as same.
+
+Instrument state parameters & what does it's key parameter means for
+1) AvailableSlots refers Currently unused slot which can be ready to take based on its supporting StainProtocol
+2) CompletedSlots refers processing is completed, available to reuse on unloading(but prefer using AvailableSlots unless there are none).
+3) CurrentProcessingSlots refer slots that are currently being processed with its respective StainProtocol.
+
+Recommend my current order message has to load into which instrument name.
