@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using MongoDB.Driver;
 
@@ -6,33 +7,45 @@ namespace GenOrcAdvisor
 {
     internal class MongoDataReader
     {
-        private readonly string _mongoDbConString = "mongodb+srv://genorcmongodbadmin:hackathon%402024@genorc-mongodb.mongocluster.cosmos.azure.com/?authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000";
-        private readonly string _databaseName = "testdb";
+        private readonly IOptions<MongoDBSettings> _mongoDBSettings;
+        private readonly MongoClient _mongoClient;
+        private readonly IMongoDatabase _mongoDatabase;
 
-        public MongoDataReader()
+        public MongoDataReader(IOptions<MongoDBSettings> mongoDBSettings)
         {
+            _mongoDBSettings = mongoDBSettings;
+
+            _mongoClient = new MongoClient(_mongoDBSettings.Value.ConnectionString);
+            _mongoDatabase = _mongoClient.GetDatabase(_mongoDBSettings.Value.DatabaseName);
         }
 
-        public MongoDataReader(IConfiguration configuration)
+        public async Task<BsonDocument> GetInstrumentStateData()
         {
-            //if(configuration is null)
-            //    throw new ArgumentNullException(nameof(configuration));
-            //if(configuration["MongoDB:ConnectionString"] is null)
-            //    throw new ArgumentNullException(nameof(configuration));
+            var collection = _mongoDatabase.GetCollection<BsonDocument>(_mongoDBSettings.Value.InstrumentStateCollectionName);
 
-            //_mongoDbConString = configuration["MongoDB:ConnectionString"];
+            var InstrumentStateData = (await collection.FindAsync(_ => true)).ToListAsync<BsonDocument>().Result;
+
+            if (InstrumentStateData.Count == 1)
+                return InstrumentStateData[0];
+            else if (InstrumentStateData.Count > 1)
+                throw new InvalidDataException($"'{_mongoDBSettings.Value.InstrumentStateCollectionName}' collection has multiple documents. Expecting state data to be single json doc.");
+            else
+                throw new InvalidDataException($"'{_mongoDBSettings.Value.InstrumentStateCollectionName}' collection has no data available. Expecting state data to be single json doc.");
         }
-        public List<BsonDocument> GetInstrumentStateData()
+
+        public async Task<BsonDocument> GetNextDocument()
         {
-            var client = new MongoClient(_mongoDbConString);
+            var collection = _mongoDatabase.GetCollection<BsonDocument>(_mongoDBSettings.Value.OrderMessagesCollectionName);
 
-            var database = client.GetDatabase(_databaseName);
+            var OrderMessagesData = (await collection.FindAsync(_ => true)).ToListAsync<BsonDocument>().Result;
 
-            var collection = database.GetCollection<BsonDocument>("CurrentStateofInstrument");
-
-            return ReadDocuments(collection);
-
+            if (OrderMessagesData.Count > 1)
+                return OrderMessagesData[0];
+            else
+                return new BsonDocument();
         }
+        
+        #region CRUD Operations Sample
 
         // Create
         static void CreateDocument(IMongoCollection<BsonDocument> collection)
@@ -90,7 +103,8 @@ namespace GenOrcAdvisor
             {
                 Console.WriteLine("No documents matched the filter criteria.");
             }
-        }
+        } 
+        #endregion
 
     }
 }

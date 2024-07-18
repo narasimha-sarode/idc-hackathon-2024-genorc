@@ -1,5 +1,9 @@
 ﻿using Azure;
 using Azure.AI.OpenAI;
+using GenOrcAdvisor;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using OpenAI.Chat;
 
 internal class Program
@@ -8,29 +12,56 @@ internal class Program
     {
         try
         {
-            string keyFromEnvironment = Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY") ?? string.Empty;
+            var appBuilderSettings = new HostApplicationBuilderSettings()
+            {
+                EnvironmentName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? Microsoft.Extensions.Hosting.Environments.Production,
+                Args = args,
+                ApplicationName = System.Diagnostics.Process.GetCurrentProcess().ProcessName
+            };
 
-            keyFromEnvironment = "971ec1b405084f5c9fe4da9d135c4cae";
-            string uri = "https://becopenaidev6.openai.azure.com/";
+            var builder = Host.CreateApplicationBuilder(appBuilderSettings);
 
-            AzureOpenAIClient azureClient = new(
-                new Uri(uri),
-                new AzureKeyCredential(keyFromEnvironment));
-            ChatClient chatClient = azureClient.GetChatClient("gpt-4o");
+            builder.Configuration.AddEnvironmentVariables();
 
-            string prompt = File.ReadAllText("prompt.txt");
-            prompt = string.Format(prompt, File.ReadAllText("InstrumentState.json"), File.ReadAllText("OrderMessageSample.json"));
+            builder.Services.Configure<AzureAISettings>(builder.Configuration.GetSection("AzureAI"));
+            builder.Services.Configure<MongoDBSettings>(builder.Configuration.GetSection("MongoDB"));
 
-            var res = chatClient.CompleteChat(prompt);
+            #region Updating Configuration read from Envrionment Variable Secrets
 
-            if (res != null && res.Value.Content.Count > 0)
-                Console.WriteLine($"AI Responded as... \n\n {res.Value.Content[0].Text}");
-            else
-                Console.WriteLine("Response is returned empty..");
+            builder.Services.Configure<AzureAISettings>(azureAIConfig =>
+            {
+                var azureAISettings = builder.Configuration.GetSection("AzureAI").Get<AzureAISettings>() ?? throw new InvalidOperationException($"Couldn't find AzureAISettings configuration");
+                var API_KEY = builder.Configuration["AzureAI:API_KEY"];
+                if (string.IsNullOrWhiteSpace(API_KEY))
+                    throw new ArgumentNullException("ConnectionString", "No ConnectionString Provided");
+
+                azureAISettings.API_KEY = API_KEY;
+            });
+
+            builder.Services.Configure<MongoDBSettings>(mongoConfig =>
+            {
+                var mongoDBSettings = builder.Configuration.GetSection("MongoDB").Get<MongoDBSettings>() ?? throw new InvalidOperationException($"Couldn't find MongoDBSettings configuration");
+                var ConnectionString = builder.Configuration["MongoDB:ConnectionString"];
+                if (string.IsNullOrWhiteSpace(ConnectionString))
+                    throw new ArgumentNullException("ConnectionString", "No ConnectionString Provided");
+
+                mongoDBSettings.ConnectionString = ConnectionString;
+            });
+
+            #endregion
+
+            builder.Services.AddSingleton<GPTWorker>();
+            builder.Services.AddSingleton<MongoDataReader>();
+
+            builder.Services.AddHostedService<GenOrcAdvisorBackgroundService>();
+
+            var app = builder.Build();
+
+            app.Run();
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Exception occured...\n\n Details::{ex.ToString()}");
+            Console.WriteLine($"Global Exception occured...\n\n Details::{ex.ToString()}");
         }
     }
 }
