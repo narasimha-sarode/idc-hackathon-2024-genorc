@@ -5,13 +5,13 @@ using MongoDB.Driver;
 
 namespace GenOrcAdvisor
 {
-    internal class MongoDataReader
+    internal class MongoDataAccessorService
     {
         private readonly IOptions<MongoDBSettings> _mongoDBSettings;
         private readonly MongoClient _mongoClient;
         private readonly IMongoDatabase _mongoDatabase;
 
-        public MongoDataReader(IOptions<MongoDBSettings> mongoDBSettings)
+        public MongoDataAccessorService(IOptions<MongoDBSettings> mongoDBSettings)
         {
             _mongoDBSettings = mongoDBSettings;
 
@@ -19,11 +19,11 @@ namespace GenOrcAdvisor
             _mongoDatabase = _mongoClient.GetDatabase(_mongoDBSettings.Value.DatabaseName);
         }
 
-        public async Task<BsonDocument> GetInstrumentStateData()
+        public async Task<BsonDocument> GetCurrentInstrumentState()
         {
             var collection = _mongoDatabase.GetCollection<BsonDocument>(_mongoDBSettings.Value.InstrumentStateCollectionName);
 
-            var InstrumentStateData = (await collection.FindAsync(_ => true)).ToListAsync<BsonDocument>().Result;
+            var InstrumentStateData = await collection.Find(_ => true).ToListAsync();
 
             if (InstrumentStateData.Count == 1)
                 return InstrumentStateData[0];
@@ -33,18 +33,38 @@ namespace GenOrcAdvisor
                 throw new InvalidDataException($"'{_mongoDBSettings.Value.InstrumentStateCollectionName}' collection has no data available. Expecting state data to be single json doc.");
         }
 
-        public async Task<BsonDocument> GetNextDocument()
+        public async Task<BsonDocument> GetNextOrderToProcess()
         {
             var collection = _mongoDatabase.GetCollection<BsonDocument>(_mongoDBSettings.Value.OrderMessagesCollectionName);
 
-            var OrderMessagesData = (await collection.FindAsync(_ => true)).ToListAsync<BsonDocument>().Result;
+            //Considering Docs which doesn't have 'GenOrcAdvisor.Success' as true
+            var filter = Builders<BsonDocument>.Filter.Ne("GenOrcAdvisor.Success", true);
 
-            if (OrderMessagesData.Count > 1)
+            var OrderMessagesData = await collection.Find(filter).ToListAsync();
+
+            if (OrderMessagesData.Count >= 1)
                 return OrderMessagesData[0];
             else
                 return new BsonDocument();
         }
-        
+
+        public async Task UpdateAIResponse(BsonDocument docToUpdate, string recommendationTxt)
+        {
+            var collection = _mongoDatabase.GetCollection<BsonDocument>(_mongoDBSettings.Value.OrderMessagesCollectionName);
+
+            var filter = Builders<BsonDocument>.Filter.Eq("_id", docToUpdate.ElementAt(0).Value);
+
+            var IsSuccess = !string.IsNullOrWhiteSpace(recommendationTxt);
+
+            var updateDefinition = Builders<BsonDocument>.Update
+                                                         .Set("GenOrcAdvisor.Success", IsSuccess)
+                                                         .Set("GenOrcAdvisor.Recommendation", recommendationTxt);
+
+
+            await collection.UpdateOneAsync(filter, updateDefinition);
+
+        }
+
         #region CRUD Operations Sample
 
         // Create
@@ -103,7 +123,8 @@ namespace GenOrcAdvisor
             {
                 Console.WriteLine("No documents matched the filter criteria.");
             }
-        } 
+        }
+
         #endregion
 
     }

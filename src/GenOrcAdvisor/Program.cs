@@ -50,8 +50,8 @@ internal class Program
 
             #endregion
 
-            builder.Services.AddSingleton<GPTWorker>();
-            builder.Services.AddSingleton<MongoDataReader>();
+            builder.Services.AddSingleton<OrderAdviceGenerator>();
+            builder.Services.AddSingleton<MongoDataAccessorService>();
 
             builder.Services.AddHostedService<GenOrcAdvisorBackgroundService>();
 

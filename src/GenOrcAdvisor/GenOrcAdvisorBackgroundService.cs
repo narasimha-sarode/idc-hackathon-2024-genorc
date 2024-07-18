@@ -9,9 +9,9 @@ namespace GenOrcAdvisor
 {
     internal class GenOrcAdvisorBackgroundService : IHostedService
     {
-        private readonly GPTWorker _worker;
+        private readonly OrderAdviceGenerator _worker;
 
-        public GenOrcAdvisorBackgroundService(GPTWorker worker)
+        public GenOrcAdvisorBackgroundService(OrderAdviceGenerator worker)
         {
             _worker = worker;
         }
